@@ -1,0 +1,101 @@
+---
+title: "bmes547 hw3"
+author: "Jeremy Leipzig"
+date: "2/8/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Classification of Active Sites using Neural Network
+In this assignment, you are going to predict catalytic residues in proteins using sequence and structural information. The dataset (courtesy of Natalia Petrova) is a subset of the data used in "Prediction of catalytic residues using Support Vector Machine with selected protein sequence and structural properties", Natalia Petrova and Cathy Wu, 2006.
+
+http://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-7-312
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(nnet)
+library(caret)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+set.seed(1234)
+```
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, error=FALSE, results='hide'}
+## Load the data
+# Get the data using the loadcatsite() fnction.
+source("loadcatsite.R")
+X<-loadcatsite()$X
+T<-loadcatsite()$T
+
+#create sets on the targets to insure even distribution of outcomes
+flds <- createFolds(T, k = 4, list = TRUE, returnTrain = FALSE)
+
+test.cl <- function(true, pred) {
+  #return confusion matrix
+  truef <- factor(colnames(true)[max.col(true)],levels=c(-1,1))
+  predf <- factor(colnames(pred)[max.col(pred)],levels=c(-1,1))
+  ct<-table(truef, predf)
+  return(ct)
+}
+
+get_accuracy<-function(resulttable){
+  #assumes NEG POS columns and rows
+  #Classification accuracy
+  #(TP + TN) / (TP + TN + FP + FN)
+  TN<-resulttable[1,1]
+  TP<-resulttable[2,2]
+  FN<-resulttable[2,1]
+  FP<-resulttable[1,2]
+  accuracy <- ((TP + TN) / (TP + TN + FP + FN))
+  return(accuracy)
+}
+
+
+
+max.units<-30
+num.folds<-4
+
+training_classification_accuracy<-NULL
+test_classification_accuracy<-NULL
+
+training_fold<-list()
+test_fold<-list()
+
+for(units in 1:max.units){
+  print(paste(units,"units"))
+  training_fold[[units]]<-list()
+  test_fold[[units]]<-list()
+  for(fold in 1:num.folds){
+    trainingset <- unlist(flds[-fold])
+    testset <- flds[[fold]]
+    net<-nnet(X[trainingset,],class.ind(T[trainingset]),size = units, maxit = 500)
+    training_fold[[units]][[fold]]<-test.cl(class.ind(T[trainingset]), predict(net, X[trainingset,]))
+    test_fold[[units]][[fold]]<-test.cl(class.ind(T[testset]), predict(net, X[testset,]))
+  }
+  training_classification_accuracy[units]<-get_accuracy(Reduce("+",training_fold[[units]]))
+  test_classification_accuracy[units]<-get_accuracy(Reduce("+",test_fold[[units]]))
+}
+data.frame(units=1:max.units,training_classification_accuracy,test_classification_accuracy) -> results
+```
+
+## What is the training and test accuracies?
+```{r}
+results %>% melt(id.vars="units") -> melt_results
+
+ggplot(melt_results,aes(units,value))+
+  geom_smooth(aes(color=variable))+
+  geom_point(aes(color=variable))+
+  xlab("hidden units")+
+  ylab("classification accuracy")
+
+knitr::kable(results %>% select(units,test_classification_accuracy))
+```
+
+## What is the best number of hidden units?
+`r results$units[which(results$test_classification_accuracy==max(results$test_classification_accuracy))]` units
+
+

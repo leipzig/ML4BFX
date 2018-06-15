@@ -1,0 +1,119 @@
+---
+title: "bmes547 hw5 decision tree catsite"
+author: "Jeremy Leipzig"
+date: "2/22/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Classification of Active Sites using Decision Trees
+In this assignment, you are going to predict catalytic residues in proteins using sequence and structural information. The dataset (courtesy of Natalia Petrova) is a subset of the data used in "Prediction of catalytic residues using Support Vector Machine with selected protein sequence and structural properties", Natalia Petrova and Cathy Wu, 2006.
+
+http://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-7-312
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(rpart)
+library(caret)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+set.seed(1234)
+```
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, error=FALSE, results='hide'}
+## Load the data
+# Get the data using the loadcatsite() fnction.
+source("loadcatsite.R")
+X<-loadcatsite()$X
+T<-loadcatsite()$T
+
+#create sets on the targets to insure even distribution of outcomes
+flds <- createFolds(T, k = 4, list = TRUE, returnTrain = FALSE)
+
+test.cl <- function(true, pred) {
+  #return confusion matrix
+  truef <- factor(colnames(true)[max.col(true)],levels=c(-1,1))
+  predf <- factor(colnames(pred)[max.col(pred)],levels=c(-1,1))
+  ct<-table(truef, predf)
+  return(ct)
+}
+
+get_accuracy<-function(resulttable){
+  #assumes NEG POS columns and rows
+  #Classification accuracy
+  #(TP + TN) / (TP + TN + FP + FN)
+  TN<-resulttable[1,1]
+  TP<-resulttable[2,2]
+  FN<-resulttable[2,1]
+  FP<-resulttable[1,2]
+  accuracy <- ((TP + TN) / (TP + TN + FP + FN))
+  return(accuracy)
+}
+```
+
+## Separate the data (randomly) into 1/4th test set and 3/4th training set.
+```{r}
+trainingset<-unlist(flds[-1])
+testset<-flds[[1]]
+```
+
+## Construct decision tree for the training set.
+```{r}
+trainingdf<-data.frame(X[trainingset,],is_cat=as.factor(T[trainingset]))
+
+testdf<-data.frame(X[testset,],is_cat=as.factor(T[testset]))
+fit <- rpart(is_cat ~ ., data = trainingdf)
+```
+
+## Visualize the tree (but not here)
+```{r eval=FALSE}
+plot(fit)
+text(fit, use.n=TRUE, all=TRUE, cex=.8)
+```
+
+## Print out the rule set for the tree.
+```{r}
+fit
+```
+
+## What is the classification accuracy on the training and the test sets?
+```{r accuracies}
+#the class indicator function is useful here, incidentally
+training_res<-test.cl(nnet::class.ind(T[trainingset]), predict(fit, trainingdf))
+test_res<-test.cl(nnet::class.ind(T[testset]), predict(fit, testdf))
+
+training_classification_accuracy<-get_accuracy(training_res)
+test_classification_accuracy<-get_accuracy(test_res)
+```
+
+training classification accuracy: `r training_classification_accuracy`
+
+test classification accuracy: `r test_classification_accuracy`
+
+## Prune the tree
+```{r}
+pfit<- prune(fit, cp=0.03)
+```
+
+## How many rules were there before pruning and after pruning?
+
+Before: `r unname(tail(fit$cptable[, "nsplit"], 1))`
+
+After: `r unname(tail(pfit$cptable[, "nsplit"], 1))`
+
+## What is the classification accuracy on the training and the test sets?
+```{r retest_accuracies}
+training_res<-test.cl(nnet::class.ind(T[trainingset]), predict(pfit, trainingdf))
+test_res<-test.cl(nnet::class.ind(T[testset]), predict(pfit, testdf))
+
+training_classification_accuracy<-get_accuracy(training_res)
+test_classification_accuracy<-get_accuracy(test_res)
+```
+
+training classification accuracy after pruning: `r training_classification_accuracy`
+
+test classification accuracy after pruning: `r test_classification_accuracy`

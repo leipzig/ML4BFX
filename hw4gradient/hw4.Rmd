@@ -1,0 +1,22 @@
+---
+title: "Hw4"
+author: "Jeremy Leipzig"
+date: "February 14, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("gradientdescent.R")
+```
+
+## Gradient descent
+
+```{r, warning=FALSE}
+f = function(x) { 2*sin(x) + 3*cos(x) + x }
+g = function(x) { 2*cos(x) - 3*sin(x) + 1 }
+res<-gdescent(guess=0, f=f, g=g)
+```
+
+Final x is `r res$guess` and f(x) is `r res$f_of_x`
+

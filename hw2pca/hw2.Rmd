@@ -1,0 +1,142 @@
+---
+title: "bmes547 hw2"
+author: "Jeremy Leipzig"
+date: "2/1/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(MASS)
+library(RColorBrewer)
+library(ggfortify)
+library(readxl)
+library(stringr)
+library(dplyr)
+set.seed(1)
+```
+
+## Iterative calculation of first Principal Component
+
+```{r}
+#return first principal component using expectation maximumization
+norm_vec <- function(x) sqrt(sum(x^2))
+
+noisy_matrix<-function(){
+  xvals<-runif(200,min=-1,max=1)
+  noisy_yvals<-function(x){return(x+rnorm(1)/4)}
+  matrix(c(xvals,sapply(xvals,noisy_yvals)),ncol=2)
+}
+
+pca_em<-function(X=noisy_matrix(),maxiter=10,doplot=FALSE){
+  # Calculate first PC using Expectation Maximization
+  # if X is not provided, create a random 100x2 matrix that exhibit noise around a line.
+  # if maxiter argument is not provided, set it to 10
+  # if doplot argument is not provided, set it to false
+  
+  # Shift X  so it has zero mean on each dimension.
+  CX<-scale(X,center=TRUE,scale=FALSE)
+    
+  # if doplot is true, plot X on figure-1 (if X has more than 3 dimensions, use
+                                            # only first 3 dimensions for plotting)
+  if(doplot){
+    existing_plot<-ggplot(as.data.frame(X),aes(x = V1,y=V2))+geom_point()
+  }
+  # initialize p to be a random vector
+  p<-runif(ncol(CX))
+  # convert the following pseudocode into Matlab code.
+  seg_colors<-brewer.pal(10,"Set3")
+  for(i in 1:maxiter){
+    # initialize s using zeros()
+    # s=zeros(...)
+    s<-rep(0,ncol(CX))
+    # for each row x of X
+    for(j in 1:nrow(CX)){
+      x<-CX[j,]
+      #   s=s+(x . p)x
+      s<-s+(x %*% p)*x
+      # p=s/|s|
+    }
+      p<-s/norm_vec(s)
+      # if doplot is true, call plot_p(p) to display current p.
+      if(doplot){
+        existing_plot<-existing_plot+
+          geom_segment(aes(x = 0, y = 0, xend = p[1], yend = p[2]),
+                       color=seg_colors[i%%10+1])+
+          xlab("X")+ylab("Y")
+        if(i==maxiter){print(existing_plot)}
+      }
+    }
+    return(p)
+}
+
+my_noisy_matrix<-noisy_matrix()
+p<-pca_em(X=my_noisy_matrix, maxiter = 10, doplot = TRUE)
+```
+
+\pagebreak
+
+## PCA Visualization
+```{r}
+stromadata<-read_excel("stromadata.xlsx")
+isbic_logical<-str_detect(names(stromadata[,-1]),'sIBC')
+
+#rename samples uniquely
+names(stromadata)<-c("id",paste("sample",1:47,sep="_"))
+#rename genenames
+stromadata$id<-c(paste("gene",1:nrow(stromadata),sep="_"))
+
+stromamatrix<-as.matrix(stromadata[,-1])
+
+#transpose
+stromat<-t(stromamatrix)
+
+#reintroduce the sample labels
+attr(stromat,"dimnames")[[2]]<-stromadata$id
+
+#determine IBC status from label
+ibcer<-data.frame(isbic_logical)
+ibcer$ibc_label<-ifelse(ibcer$isbic_logical,"IBC","notIBC")
+
+#decompose & plot
+pca_t<-prcomp(stromat)
+autoplot(pca_t, data = ibcer, colour = 'ibc_label')
+```
+
+\pagebreak
+
+## LDA Classification
+```{r, message=FALSE, warning=FALSE}
+pca_df<-data.frame(pca_t$x)
+pca_df$isIBC<-as.factor(ibcer$ibc_label)
+
+pc.lda <- lda(isIBC ~ PC1+PC2, pca_df, tol = 0.0)
+predictions<-predict(pc.lda,pca_df)$class
+mean(pca_df$isIBC==predictions)
+
+grading<-data.frame(pred=as.character(predictions),truth=as.character(pca_df$isIBC))
+
+grading %>% group_by(pred,truth) %>% summarize(cnt=n()) %>% 
+               mutate(grade=ifelse(pred=='notIBC' & truth=='notIBC',"TN",
+                     ifelse(pred=='IBC' & truth=='IBC',"TP",
+                      ifelse(pred=='notIBC' & truth=='IBC',"FN","FP")))) %>% 
+               right_join(data.frame(prediction=c("IBC","notIBC","IBC","notIBC"),
+                                     truepheno=c("IBC","notIBC","notIBC","IBC"),
+                                     grade=factor(c("TP","TN","FP","FN")))) %>%
+               transform(cnt=ifelse(is.na(cnt),0,cnt)) %>%
+               select(prediction,truepheno,grade,cnt) -> graded
+
+knitr::kable(graded)
+```
+
+Wow, that is atrocious. Apparently PCA/LDA is not a good method for classifying this data set.
+
+### Accuracy
+```{r, message=FALSE, warning=FALSE}
+accuracy<-(graded[graded$grade=='TP',"cnt"]+graded[graded$grade=='TN',"cnt"])/sum(graded[,"cnt"])
+print(accuracy)
+```

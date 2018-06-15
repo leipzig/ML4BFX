@@ -1,0 +1,202 @@
+---
+title: "bmes547 hw1"
+author: "Jeremy Leipzig"
+date: "1/25/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+library(ggplot2)
+library("MASS")
+set.seed(1)
+```
+
+## Q1
+```{r}
+# This function simulates flipping a coin by generating random numbers 
+# from a uniform distribution in [0,1) and considering numbers < 0.5 to be 
+# tails and numbers >= 0.5 heads.
+# Returns the ratio of the heads over "trials" number of coin flips.
+hw1_coinflips<-function(trials){
+ flip = runif(trials)
+ heads = (flip >= 0.5);
+ headsratio = sum(heads)/trials;
+ return(headsratio)
+}
+
+```
+
+
+### a
+```{r, echo=TRUE, message=TRUE, warning=FALSE, results='asis'}
+print(hw1_coinflips(100))
+hw1_coinflips(100)
+```
+No, the answer is not the same because of sampling error.
+
+### b
+```{r, echo=TRUE, message=TRUE, warning=FALSE, results='asis'}
+getsd<-function(trials,experiments){
+ headsratios<-sapply(1:experiments,function(x){hw1_coinflips(trials)})
+ return(sd(headsratios))
+}
+trials<-c(10,100,1000,10000,100000)
+results<-data.frame(trials=trials,sd_trials=sapply(trials,function(x){getsd(x,10)}))
+ggplot(results,aes(trials,log(sd_trials)))+geom_point()
+```
+
+The standard deviation of a binomial distribution with N trials and a ${\mu}$ probability of success on each trial is:
+
+$\sqrt {N\mu(1-\mu)}$
+for ${\mu}$ of .5 this is
+$\sqrt {N*.5(.5)}$
+
+
+### c
+```{r, echo=TRUE, message=TRUE, warning=FALSE, results='asis'}
+experiments<-c(10,100,1000,10000,100000)
+results<-data.frame(experiments=experiments,sd_exp=sapply(experiments,function(x){getsd(10,x)}))
+ggplot(results,aes(experiments,log(sd_exp)))+geom_point()
+```
+
+We would expect the standard deviation to increase with the number of trials, since if you flip a coin but the number of trials is constant here. Increasing the number of experiments reduces the sampling error so we are just asymptotically approaching at `r sqrt(10*.25)`, the log of which is `r log(sqrt(10*.25))`
+
+\pagebreak
+
+## Q2
+```{r}
+hw1_montyhall<-function(strategy,trials){
+  sample.vec <- function(x, ...) x[sample(length(x), ...)]
+  wins<-0
+  for(i in 1:trials){
+    #randomly determine which door has the car.
+    cardoor <- sample.vec(1:3,1)
+    #player picks a door randomly.
+    playerdoor <- sample.vec(1:3,1)
+    #among the two doors the player did not pick,
+    #randomly discard one that doesn't have the car.
+    discarddoor<-sample.vec((1:3)[c(-cardoor,-playerdoor)],1)
+    if(strategy == 1){
+      playerdoor<-(1:3)[c(-discarddoor,-playerdoor)]
+    }else{
+      if(strategy == 2){
+        playerdoor<-sample.vec((1:3)[c(-discarddoor)],1)
+      }
+    }
+    #strategy 0 do nothing
+    if(playerdoor==cardoor){wins<-wins+1}
+  }
+  return(wins/trials)
+}
+```
+never switch door
+```{r}
+hw1_montyhall(0,1000)
+```
+
+always switch door
+```{r}
+hw1_montyhall(1,1000)
+```
+
+switch door at random
+```{r}
+hw1_montyhall(2,1000)
+```
+\pagebreak
+
+## Q3
+```
+P(alarm+) = 0.9
+P(alarm-) = 1 - P(alarm+) = 0.1
+P(getup|alarm+) = 0.95
+P(getup|alarm-) = 0.60
+P(getup) = P(getup|alarm+)*P(alarm+) + P(getup|alarm-)*P(alarm-) = .95(0.9) + .60(0.10) = 0.915
+```
+
+## Q4
+```{r}
+generate_uniform<-function(i){
+  n<-1000
+  return(sum(runif(n))-n*0.5)
+}
+all_samples<-sapply(1:1000,generate_uniform)
+
+expected_variance<-1/(.7234*sqrt(1000))
+expected_sd<-sqrt(expected_variance)
+
+observed_sd<-sd(all_samples)
+
+#we need to scale up the density to plot this on a histogram
+ggplot() + aes(all_samples)+geom_histogram()+stat_function( 
+  fun = function(x, mean, sd, n, bw){ 
+    dnorm(x = x, mean = mean, sd = sd) * n * bw
+  }, args = c(mean = 0, sd = observed_sd, n = 2250, bw = 1))
+```
+\pagebreak
+
+## q5
+```{r}
+X<-rnorm(1000)
+
+ggplot()+aes(X)+geom_histogram(bins=100)
+# a tabulation of the counts in each bin
+# for clarity's sake let's call this Y
+Y<-table(cut_interval(X,n=100))
+Y<-Y/sum(Y)
+muY<-mean(Y)
+varianceY<-var(Y)
+muY
+varianceY
+
+sigmaY<-sqrt(varianceY)
+
+
+ggplot(data.frame(x = c(-0.1, 0.1)), aes(x)) + 
+  geom_density() + 
+  stat_function(fun = dnorm, args = list(mean = muY, sd = sigmaY))
+
+
+fit<-fitdistr(Y, "normal")
+fit$estimate
+```
+Yes, the mean and standard deviation look similar to the one from the tabulation
+\pagebreak
+
+## q6
+```{r}
+x_given_w1<-function(x){ dnorm(x, mean = 1, sd = 1) }
+x_given_w2<-function(x){ dnorm(x, mean = 2, sd = 4) }
+
+ggplot(data.frame(x = c(-10, 10)), aes(x)) + 
+  geom_density() + 
+  stat_function(fun = x_given_w1, aes(color = "x|w1")) +
+  stat_function(fun = x_given_w2, aes(color = "x|w2")) + 
+  ylab("Class densities") +
+  scale_colour_manual("Legend", values = c("red","blue"))
+
+P_w1 <- 0.4
+P_w2 <- 0.6
+P_x <- function(x){x_given_w1(x) + x_given_w2(x)}
+w1_given_x<-function(x){(x_given_w1(x)*P_w1)/P_x(x)}
+w2_given_x<-function(x){(x_given_w2(x)*P_w2)/P_x(x)}
+ratio<-function(x){(x_given_w1(x)*P_w1)/(x_given_w2(x)*P_w2)}
+decision_threshold_function <- function(x){abs(ratio(x)-1)}
+decision_threshold_one<-optimize(decision_threshold_function,interval = c(-2,0))
+decision_threshold_two<-optimize(decision_threshold_function,interval = c(2,5))
+
+ggplot(data.frame(x = c(-10, 10)), aes(x)) +
+  stat_function(fun = w1_given_x,geom = "line", aes(color = "w1|x")) +
+  stat_function(fun = w2_given_x,geom = "line", aes(color = "w2|x")) +
+  stat_function(fun = ratio, geom = "line", aes(color= "ratio")) + ylab("Posterior Probabilities") +
+  geom_vline(xintercept = decision_threshold_one$minimum) +
+  geom_vline(xintercept = decision_threshold_two$minimum) +
+  scale_colour_manual("Legend", values = c("green","red","blue"))
+
+```
+
+w1 is more likely if x is 1
